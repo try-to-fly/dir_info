@@ -22,41 +22,55 @@ fn main() {
 
     let start_time = Instant::now();
 
-    let mut file_count = 0;
-    let mut dir_count = 0;
-    let mut total_size = 0;
-
     let mp = MultiProgress::new();
-    let pb = mp.add(ProgressBar::new_spinner());
-    pb.set_style(ProgressStyle::default_spinner()
+    let spinner = mp.add(ProgressBar::new_spinner());
+    spinner.set_style(ProgressStyle::default_spinner()
         .template("{spinner:.green} {msg}")
         .expect("Failed to set template")
         .tick_strings(&["⠋", "⠙", "⠴", "⠦", "⠇", "⠸", "⠼", "⠴", "⠦", "⠇", "⠸"]));
 
-    pb.set_message("Processing...");
-    visit_dirs(Path::new(path), &mut file_count, &mut dir_count, &mut total_size).expect("Error reading directory");
-    pb.finish_with_message("Done!");
+    let file_pb = mp.add(ProgressBar::new(0));
+    file_pb.set_style(ProgressStyle::default_bar()
+        .template("{prefix:.bold.dim} {wide_bar:.cyan/blue} {pos}")
+        .expect("Failed to set template"));
+    file_pb.set_prefix("Files:");
+
+    let dir_pb = mp.add(ProgressBar::new(0));
+    dir_pb.set_style(ProgressStyle::default_bar()
+        .template("{prefix:.bold.dim} {wide_bar:.magenta/blue} {pos}")
+        .expect("Failed to set template"));
+    dir_pb.set_prefix("Dirs: ");
+
+    let size_pb = mp.add(ProgressBar::new(0));
+    size_pb.set_style(ProgressStyle::default_bar()
+        .template("{prefix:.bold.dim} {wide_bar:.yellow/blue} {bytes}")
+        .expect("Failed to set template"));
+    size_pb.set_prefix("Size: ");
+
+    spinner.set_message("Processing...");
+    visit_dirs(Path::new(path), &file_pb, &dir_pb, &size_pb).expect("Error reading directory");
+    spinner.finish_with_message("Done!");
 
     let duration = start_time.elapsed();
 
-    println!("{}", format!("Total size: {}", ByteSize(total_size)).cyan());
-    println!("{}", format!("File count: {}", file_count).cyan());
-    println!("{}", format!("Directory count: {}", dir_count).cyan());
+    println!("\n{}", format!("Total size: {}", ByteSize(size_pb.position())).cyan());
+    println!("{}", format!("File count: {}", file_pb.position()).cyan());
+    println!("{}", format!("Directory count: {}", dir_pb.position()).cyan());
     println!("{}", format!("Execution time: {:.2?}", duration).cyan());
 }
 
-fn visit_dirs(dir: &Path, file_count: &mut usize, dir_count: &mut usize, total_size: &mut u64) -> std::io::Result<()> {
+fn visit_dirs(dir: &Path, file_pb: &ProgressBar, dir_pb: &ProgressBar, size_pb: &ProgressBar) -> std::io::Result<()> {
     if dir.is_dir() {
-        *dir_count += 1;
+        dir_pb.inc(1);
         for entry in fs::read_dir(dir)? {
             let entry = entry?;
             let path = entry.path();
             if path.is_dir() {
-                visit_dirs(&path, file_count, dir_count, total_size)?;
+                visit_dirs(&path, file_pb, dir_pb, size_pb)?;
             } else {
-                *file_count += 1;
+                file_pb.inc(1);
                 if let Ok(metadata) = fs::metadata(&path) {
-                    *total_size += metadata.len();
+                    size_pb.inc(metadata.len());
                 }
             }
         }
